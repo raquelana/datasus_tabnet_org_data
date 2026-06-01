@@ -1,5 +1,5 @@
 ---
-title: "Organizado dados DataSUS Tabnet"
+title: "Organização de dados do DataSUS Tabnet"
 author: "Raquel Martins Lana"
 date: "2026-06-01"
 output: html_document
@@ -9,15 +9,26 @@ editor_options:
   chunk_output_type: console
 ---
 
-# Disciplina Impactos das Mudanças Climáticas na Saúde (PPGICS/Fiocruz)
+# 🌎 Disciplina Impactos das Mudanças Climáticas na Saúde (PPGICS/Fiocruz)
 
-> ## Doenças transmitidas por vetor (DTV)  
+> 🎯 **Objetivos da atividade**
+>
+> -   Importar dados do DataSUS Tabnet para o R.
+> -   Realizar limpeza e organização dos dados.
+> -   Converter tabelas do formato horizontal para o formato vertical.
+> -   Construir séries temporais de casos e incidência de dengue.
+> -   Produzir gráficos epidemiológicos utilizando o `ggplot2`.
+>
+> 💡 Ao final da atividade, você terá uma base pronta para análises
+> epidemiológicas de doenças transmitidas por vetores.
+
+> ## Doenças transmitidas por vetor (DTV)
 >
 > #### Exemplo em aula: dados de casos de dengue DataSUS Tabnet
 >
 > ##### Professores das aulas de DTV (27/05/2026 e 03/06/2026): Hermano, Izabel, e Raquel
 
-#### Os dados
+#### 📁 Os dados
 
 Os dados foram baixados do [DataSUS
 Tabnet](https://datasus.saude.gov.br/informacoes-de-saude-tabnet/) casos
@@ -27,10 +38,10 @@ baixou de um estado específico.
 
 O *script* tem o objetivo de limpar os dados e organizar uma tabela para
 todos os anos compatível com o formato vertical, mais utilizado no R.
-Ele está semi-automatizado com o intiuto de facilitar o seu uso mas nao
+Ele está semi-automatizado com o intuito de facilitar o seu uso mas não
 perder o passo a passo no processo de aprendizagem.
 
-#### Configuração do ambiente R
+#### ⚙️ Configuração do ambiente R
 
 Nesta seção, preparamos o ambiente R, instalando (se necessário) e
 carregando os pacotes básicos que serão utilizados ao longo da análise.
@@ -45,29 +56,29 @@ Os pacotes utilizados são:
 -   `here`: utilizado para referenciar os objetos utilizados no projeto
 
 ```{r Carregando pacotes}
-# Lista de pacotes necessários
+# 📦 Lista de pacotes necessários
 packages <- c("tidyverse", "here") 
 
-# Instalar pacotes que ainda não estão instalados
+# ⬇️ Instalar pacotes que ainda não estão instalados
 installed_packages <- packages %in% rownames(installed.packages())
 if (any(installed_packages == FALSE)) {
   install.packages(packages[!installed_packages], 
                    repos = "https://cloud.r-project.org")
 }
 
-# Carregar pacotes
+# 🚀 Carregar pacotes
 suppressPackageStartupMessages(
   invisible(lapply(packages, library, character.only = TRUE))
 )
 
-cat("Ambiente configurado com sucesso!\n")
+cat("✅ Ambiente configurado com sucesso!\n")
 ```
 
-### Carregando os dados e primeira etapa de limpeza
+### 📥 Carregando os dados e primeira etapa de limpeza
 
-Quando baixamos dados do Tabnet no formato `.csv`, os arquivos vem com
+Quando baixamos dados do Tabnet no formato `.csv`, os arquivos vêm com
 linhas iniciais e finais com textos informativos. Esses textos precisam
-ser excluidos e deixar somente as colunas com dados. Para tal, pode ser
+ser excluídos e deixar somente as colunas com dados. Para tal, pode ser
 interessante abrir a planilha e ver quantas linhas devemos excluir no
 início e ao fim ou usar o `readLines` que permite verificar quantas
 linhas pular (`skip`); qual o separador (`;` ou `,`); onde começam os
@@ -197,10 +208,10 @@ tail(d24)
 ## Segunda etapa: formataçao de colunas
 
 A variável município de residência possui duas informaçoes na mesma
-coluna, o geocódigo e o nome do município, o que nao facilita o trabalho
+coluna, o geocódigo e o nome do município, o que não facilita o trabalho
 quanto necessitamos agregar outras informaçoes como populaçao, por
 exemplo. Assim, o código do município será separado do nome. Além disso,
-quando nao há casos em um determinado município e mês, aparece um traço
+quando não há casos em um determinado município e mês, aparece um traço
 "-". O traço será substituido por zero.
 
 Para tal, a funçao format_tabnet foi criada, para o seu o uso, é
@@ -317,7 +328,7 @@ length(unique(d$data)) # 60: 12 meses x 5 anos
 ### Expandindo os dados para municípios sem notificaçao em determinado ano e mês
 
 Adicionando todos os municípios de Minas Gerais em todos os anos,
-assumindo zero casos para aquelas que nao tinham notificaçao.
+assumindo zero casos para aquelas que não tinham notificaçao.
 
 O final dessa parte precisa ter 51180 linhas que corresponde à 853
 municípios por 12 meses por 5 anos, ou seja:
@@ -497,7 +508,7 @@ dcompleto %>%
 
 ```
 
-Nao sei se acharam curioso, mas parece que os outros anos quase nao tem
+Nao sei se acharam curioso, mas parece que os outros anos quase não tem
 casos comparado com o ano de 2024. Entao, vamos ver um gráfico sem esse
 ano!!!
 

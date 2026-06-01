@@ -9,15 +9,18 @@ editor_options:
   chunk_output_type: console
 ---
 
-# Disciplina Impactos das Mudanças Climáticas na Saúde (PPGICS/Fiocruz)
+# 🌎 Disciplina Impactos das Mudanças Climáticas na Saúde (PPGICS/Fiocruz)
 
-> ## Doenças transmitidas por vetor (DTV)  
+> 💡 Objetivo: aprender a importar, organizar e visualizar dados de
+> agravos provenientes do DataSUS Tabnet.
+
+> ## 🦟 Doenças transmitidas por vetor (DTV)
 >
-> #### Exemplo em aula: dados de casos de dengue DataSUS Tabnet
+> #### 📊 Exemplo em aula: dados de casos de dengue DataSUS Tabnet
 >
 > ##### Professores das aulas de DTV (27/05/2026 e 03/06/2026): Hermano, Izabel, e Raquel
 
-#### Os dados
+#### 📁 Os dados
 
 Os dados foram baixados do [DataSUS
 Tabnet](https://datasus.saude.gov.br/informacoes-de-saude-tabnet/) casos
@@ -30,7 +33,7 @@ todos os anos compatível com o formato vertical, mais utilizado no R.
 Ele está semi-automatizado com o intiuto de facilitar o seu uso mas nao
 perder o passo a passo no processo de aprendizagem.
 
-#### Configuração do ambiente R
+#### ⚙️ Configuração do ambiente R
 
 Nesta seção, preparamos o ambiente R, instalando (se necessário) e
 carregando os pacotes básicos que serão utilizados ao longo da análise.
@@ -63,7 +66,7 @@ suppressPackageStartupMessages(
 cat("Ambiente configurado com sucesso!\n")
 ```
 
-### Carregando os dados e primeira etapa de limpeza
+### 📥 Carregando os dados e primeira etapa de limpeza
 
 Quando baixamos dados do Tabnet no formato `.csv`, os arquivos vem com
 linhas iniciais e finais com textos informativos. Esses textos precisam

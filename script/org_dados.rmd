@@ -13,6 +13,8 @@ editor_options:
 
 ## Doenças transmitidas por vetor - dados de casos de dengue
 
+Professores das aulas de vetores: Hermano, Izabel, e Raquel
+
 Os dados foram baixados do [DataSUS
 Tabnet](https://datasus.saude.gov.br/informacoes-de-saude-tabnet/) casos
 prováveis de dengue por município de residência nas linhas e meses de
@@ -37,20 +39,10 @@ Os pacotes utilizados são:
 -   `tidyverse`: uma coleção de pacotes R essenciais para manipulação e
     visualização de dados (inclui `ggplot2`, `dplyr`, `readr`, etc.).
 -   `here`: utilizado para referenciar os objetos utilizados no projeto
--   `remotes`: pacote leve e simples, criado especificamente para
-    instalar pacotes de repositórios de código online (GitHub, GitLab,
-    etc.), sem as dependências desnecessárias de sistema operacional
-    (como Rtools no Windows e Xcode no macOS) que outros pacotes mais
-    completos exigem. O pacote a seguir se encaixa dentro dessas
-    categorias.
--   `brpop`: possui diversas opções disponíveis relacionadas a
-    estimativas populacionais a nível de município, estado e regionais
-    de saúde. Para entender as funcionalidades do pacote, acesse
-    <https://rfsaldanha.github.io/brpop/>
 
 ```{r Carregando pacotes}
 # Lista de pacotes necessários
-packages <- c("tidyverse", "here", "remotes") 
+packages <- c("tidyverse", "here") 
 
 # Instalar pacotes que ainda não estão instalados
 installed_packages <- packages %in% rownames(installed.packages())
@@ -65,17 +57,6 @@ suppressPackageStartupMessages(
 )
 
 cat("Ambiente configurado com sucesso!\n")
-```
-
-##### Instalaçao do brpop 
-
-```{r brpop_install, eval = FALSE}
-options(timeout = 400)
-if(!"brpop" %in% installed.packages()){ 
-  remotes::install_github("rfsaldanha/brpop") 
-}
-
-library(brpop)
 ```
 
 ### Carregando os dados e primeira etapa de limpeza
@@ -215,7 +196,7 @@ A variável município de residência possui duas informaçoes na mesma
 coluna, o geocódigo e o nome do município, o que nao facilita o trabalho
 quanto necessitamos agregar outras informaçoes como populaçao, por
 exemplo. Assim, o código do município será separado do nome. Além disso,
-quando nao há casos em um determina do município e mês, aparece um traço
+quando nao há casos em um determinado município e mês, aparece um traço
 "-". O traço será substituido por zero.
 
 Para tal, a funçao format_tabnet foi criada, para o seu o uso, é
@@ -303,16 +284,21 @@ d <- d %>%
                               "Ago","Set","Out","Nov","Dez")),
                             "-01"))) %>% 
   select(muni_code = geocode, muni_name = municipio, data, meses, ano, casos)
+
+
+# Conferindo
+unique(d$muni_code) # 854, mas tem um como "MUNICI"
+# "PIO Ignorado" em MUNICI Essa marcação ocorre quando o sistema não consegue identificar a cidade de residência ou ocorrência do paciente/falecido, geralmente por preenchimento incompleto na fonte.
+d %>% filter(muni_code == "MUNICI")
+
+d <- d %>% 
+  filter(muni_code != "MUNICI") # 853
+
+length(unique(d$data)) # 60: 12 meses x 5 anos
+
+unique(d$meses)
+unique(d$ano)
         
-```
-
-### Adicionando populaçao aos dados
-
-Tá dando pau no pacote, esperando o Rapha ver.
-
-```{r Populaçao}
-pop <- ibge_pop()
-
 ```
 
 ### Expandindo os dados para municípios sem notificaçao em determinado ano e mês
@@ -322,11 +308,68 @@ assumindo zero casos para aquelas que nao tinham notificaçao.
 
 ```{r Expand grid}
 
+muni_code <- unique(d$muni_code)
+data <- unique(d$data)
 
+dexp <- expand.grid(
+                    muni_code = muni_code, 
+                    data = data)
 
+dcomplete <- left_join(dexp, d)
 
-
+dcomplete1 <- d %>%
+  complete(
+    nesting(muni_code, muni_name),
+    data = seq.Date(
+      as.Date("2020-01-01"),
+      as.Date("2024-12-01"),
+      by = "month"
+    ),
+    fill = list(casos = 0)
+  )
 
 ```
 
-### 
+### Adicionando populaçao aos dados
+
+Para acessar dados populacionais organizados de 2000 a 2024, incluindo
+as estimativas mais recentes do IBGE, está disponível no repositório
+[GitHub do Leonardo Bastos](https://github.com/lsbastos/popBR_mun).
+
+Os dados são lidos diretamente da URL em formato `.csv`, o que faz
+necessário ter conexão com a internet a cada execução. Para evitar
+downloads repetidos, recomendamos salvar os dados localmente após a
+primeira leitura. Veja abaixo.
+
+> **`.csv`:** formato universal, legível por qualquer software (Excel,
+> Python, QGIS, etc.). Ideal para compartilhar os dados com outros
+> usuários ou utilizá-los fora do R. A desvantagem é que os tipos de
+> colunas (datas, fatores, etc.) não são preservados automaticamente na
+> leitura — precisam ser reconvertidos.
+
+```{r Populaçao}
+# Baixar apenas uma vez
+pop <- read.csv("https://raw.githubusercontent.com/lsbastos/popBR_mun/refs/heads/master/popBR2000-2024.long.csv")
+
+# Selecionar o estado
+pop_mg <- pop %>%
+  filter(
+    str_starts(as.character(MUNCOD), "31"),
+    Ano %in% 2020:2024
+  )
+
+unique(pop_mg$Ano)
+unique(pop_mg$MUNCOD)
+
+# Salvando localmente na sua máquina. Utilize o código abaixo após descomentar a linha apagando o '#' e substitua 'seu/local/de/destino' pelo seu local de destino.
+# write.csv(pop_mg, "dados/pop_mg.csv", row.names = F) # -----> EDITE o nome do arquivo
+
+# Caso necesite carregar novamente esse dados, se já tiver salvo, faça:
+# pop_mg <- read_csv("dados/pop_mg.csv") # -----> EDITE o nome do arquivo
+
+# Juntando as a populaçao a tabela de casos
+dcompleto <- left_join(dcompleto, pop_mg)
+
+```
+
+### Calculo incidencia

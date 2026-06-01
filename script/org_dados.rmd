@@ -1,0 +1,332 @@
+---
+title: "Organizado dados DataSUS Tabnet"
+author: "Raquel Martins Lana"
+date: "2026-06-01"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+  chunk_output_type: console
+---
+
+# Disciplina Impactos das Mudanças Climáticas na Saúde
+
+## Doenças transmitidas por vetor - dados de casos de dengue
+
+Os dados foram baixados do [DataSUS
+Tabnet](https://datasus.saude.gov.br/informacoes-de-saude-tabnet/) casos
+prováveis de dengue por município de residência nas linhas e meses de
+primeiros sintomas nas colunas para os anos de 2020 a 2024. Cada grupo
+baixou de um estado específico.
+
+O *script* tem o objetivo de limpar os dados e organizar uma tabela para
+todos os anos compatível com o formato vertical, mais utilizado no R.
+Ele está semi-automatizado com o intiuto de facilitar o seu uso mas nao
+perder o passo a passo no processo de aprendizagem.
+
+#### Configuração do ambiente R
+
+Nesta seção, preparamos o ambiente R, instalando (se necessário) e
+carregando os pacotes básicos que serão utilizados ao longo da análise.
+A instalação é feita de forma automática para garantir a
+reprodutibilidade do script. Os pacotes utilizados para downloads
+específicos de dados são baixados e carregados ao longo do documento.
+
+Os pacotes utilizados são:
+
+-   `tidyverse`: uma coleção de pacotes R essenciais para manipulação e
+    visualização de dados (inclui `ggplot2`, `dplyr`, `readr`, etc.).
+-   `here`: utilizado para referenciar os objetos utilizados no projeto
+-   `remotes`: pacote leve e simples, criado especificamente para
+    instalar pacotes de repositórios de código online (GitHub, GitLab,
+    etc.), sem as dependências desnecessárias de sistema operacional
+    (como Rtools no Windows e Xcode no macOS) que outros pacotes mais
+    completos exigem. O pacote a seguir se encaixa dentro dessas
+    categorias.
+-   `brpop`: possui diversas opções disponíveis relacionadas a
+    estimativas populacionais a nível de município, estado e regionais
+    de saúde. Para entender as funcionalidades do pacote, acesse
+    <https://rfsaldanha.github.io/brpop/>
+
+```{r Carregando pacotes}
+# Lista de pacotes necessários
+packages <- c("tidyverse", "here", "remotes") 
+
+# Instalar pacotes que ainda não estão instalados
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages], 
+                   repos = "https://cloud.r-project.org")
+}
+
+# Carregar pacotes
+suppressPackageStartupMessages(
+  invisible(lapply(packages, library, character.only = TRUE))
+)
+
+cat("Ambiente configurado com sucesso!\n")
+```
+
+##### Instalaçao do brpop 
+
+```{r brpop_install, eval = FALSE}
+options(timeout = 400)
+if(!"brpop" %in% installed.packages()){ 
+  remotes::install_github("rfsaldanha/brpop") 
+}
+
+library(brpop)
+```
+
+### Carregando os dados e primeira etapa de limpeza
+
+Quando baixamos dados do Tabnet no formato `.csv`, os arquivos vem com
+linhas iniciais e finais com textos informativos. Esses textos precisam
+ser excluidos e deixar somente as colunas com dados. Para tal, pode ser
+interessante abrir a planilha e ver quantas linhas devemos excluir no
+início e ao fim ou usar o `readLines` que permite verificar quantas
+linhas pular (`skip`); qual o separador (`;` ou `,`); onde começam os
+dados:
+
+```{r Vendo linhas iniciais e separadores}
+readLines(
+  here("dados", "minas_gerais_2020.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2021.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2022.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2023.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2024.csv"),
+  n = 15)
+
+```
+
+Com isso, podemos observar que as 3 primeiras linhas precisam ser
+excluidas. Verificamos também os separadores. Portanto, vamos importar
+os dados com essa informaçao. No entanto, abaixo há mais parâmetros
+importantes no momento de importar dados vindo do DataSUS.
+
+Esse código é normalmente usado ao importar arquivos de texto (CSV, TXT,
+etc.), para garantir a correta interpretação dos caracteres e dos tipos
+de dados. O primeiro comando cria uma configuração regional por meio da
+funçao `locale`. Os parâmetros
+
+-   `encoding` = "latin1": informa que o arquivo utiliza a codificação
+    Latin-1 (ISO-8859-1), muito comum em arquivos produzidos por
+    sistemas brasileiros mais antigos.
+
+-   `decimal_mark` = "," :separador decimal utilizado nos números para
+    esse exemplo, 12,5 será interpretado como 12.5.
+
+-   `grouping_mark` = "." : separador de milhares, ou seja, 1.234 será
+    interpretado como 1234.
+
+-   `asciify` = FALSE: mantém caracteres acentuados (á, é, ç, ã, etc.)
+    sem convertê-los para o formato ASCII.
+
+O segundo comando define uma especificação de colunas para leitura de
+dados:
+
+-   `.default` = "c" significa que todas as colunas serão importadas
+    como texto (character).
+
+```{r Carregando os dados e excluindo as primeiras linhas}
+pt_br <- locale(
+  encoding = "latin1",
+  decimal_mark = ",",
+  grouping_mark = ".",
+  asciify = FALSE
+)
+
+colunas <- cols(.default = "c")
+
+# Importando as tabelas uma a uma
+d20 <- read_csv2(here("dados/minas_gerais_2020.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d21 <- read_csv2(here("dados/minas_gerais_2021.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d22 <- read_csv2(here("dados/minas_gerais_2022.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d23 <- read_csv2(here("dados/minas_gerais_2023.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d24 <- read_csv2(here("dados/minas_gerais_2024.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+```
+
+A mensagem abaixo, que provavelmente aparecerá, significa que alguma
+linha do arquivo não segue o padrão esperado de colunas.
+
+```{=html}
+Warning: One or more parsing issues, call problems() on your data frame for details, e.g.: dat <- vroom(...) problems(dat)
+```
+
+A melhor opçao agora é abrir arquivo e ver quais linhas temos que
+excluir ao final de d20. Repare que até a 722, temos o padrao esperado.
+Da linha "Total" em diante, devemos excluir, assim como a última coluna
+chamada "Total", que é a coluna 14.
+
+Como puderam ver, há diferenças na quantidade de municípios com
+registros de casos. Dependendo da análise, é importante corrigir isso.
+Mais abaixo será disponibilizado um comando com essa funcionalidade.
+
+```{r Excluindo linhas e colunas}
+d20 <- d20[1:722, -14]
+d21 <- d21[1:569, -14]
+d22 <- d22[1:741, -14]
+d23 <- d23[1:824, -14]
+d24 <- d24[1:854, -14]
+
+# Conferindo
+tail(d20)
+tail(d21)
+tail(d22)
+tail(d23)
+tail(d24)
+
+```
+
+## Segunda etapa: formataçao de colunas
+
+A variável município de residência possui duas informaçoes na mesma
+coluna, o geocódigo e o nome do município, o que nao facilita o trabalho
+quanto necessitamos agregar outras informaçoes como populaçao, por
+exemplo. Assim, o código do município será separado do nome. Além disso,
+quando nao há casos em um determina do município e mês, aparece um traço
+"-". O traço será substituido por zero.
+
+Para tal, a funçao format_tabnet foi criada, para o seu o uso, é
+necessário apenas informar a tabela em questao.
+
+```{r Reformatando linhas e colunas}
+# Execute uma vez a funçao abaixo
+format_tabnet <- function(df){
+
+  df %>%
+    mutate(
+      geocode = str_sub(`Município de residência`, 1, 6),
+      municipio = str_sub(`Município de residência`, 7)
+    ) %>%
+    select(-`Município de residência`) %>%
+    mutate(
+      across(
+        Jan:Dez,
+        ~ as.numeric(str_replace_all(.x, "-", "0"))
+      )
+    ) %>%
+    mutate(
+      municipio = str_trim(
+        str_remove_all(municipio, '"')
+      )
+    )
+}
+
+# Aplique a funçao para cada ano
+d20 <- format_tabnet(d20)
+d21 <- format_tabnet(d21)
+d22 <- format_tabnet(d22)
+d23 <- format_tabnet(d23)
+d24 <- format_tabnet(d24)
+
+```
+
+## Verticalizaçao dos dados
+
+Para facilitar o trabalho com vários anos, os dados foram
+verticalizados. Esse também é o formato mais usual para trabalhar no R.
+Nesse caso é necessário informar a tabela e o ano correspondente.
+
+```{r Verticaliza dados}
+# Execute a funçao para verticalizar os dados e adicionar a variável ano
+vertical_dados <- function(df, ano) {
+  df %>%
+    gather(meses, casos, -c(geocode, municipio)) %>%
+    mutate(ano = ano)
+}
+
+# Aplique a funçao para cada ano
+d20 <- vertical_dados(d20, 2020)
+d21 <- vertical_dados(d21, 2021)
+d22 <- vertical_dados(d22, 2022)
+d23 <- vertical_dados(d23, 2023)
+d24 <- vertical_dados(d24, 2024)
+
+```
+
+O comando abaixo junta todos os anos. Atençao, para isso funcionar bem,
+antes é preciso garantir que as mesmas colunas estao presentes em todos
+os anos e que sejam do mesmo tipo.
+
+```{r Juntando todos os anos}
+d <- bind_rows(d20,
+               d21,
+               d22,
+               d23,
+               d24)    
+```
+
+##### Variável data
+
+Para futuramente facilitar a confecçao de gráficos de séries temporais,
+criar a variável no formato data (2020-01-01), assumindo o dia como o
+primeiro dia de cada mês:
+
+```{r Variável data}
+d <- d %>%
+    mutate(
+      data = as.Date(paste0(ano, "-", 
+                            match(meses,
+                            c("Jan","Fev","Mar","Abr","Mai","Jun","Jul",
+                              "Ago","Set","Out","Nov","Dez")),
+                            "-01"))) %>% 
+  select(muni_code = geocode, muni_name = municipio, data, meses, ano, casos)
+        
+```
+
+### Adicionando populaçao aos dados
+
+Tá dando pau no pacote, esperando o Rapha ver.
+
+```{r Populaçao}
+pop <- ibge_pop()
+
+```
+
+### Expandindo os dados para municípios sem notificaçao em determinado ano e mês
+
+Adicionando todos os municípios de Minas Gerais em todos os anos,
+assumindo zero casos para aquelas que nao tinham notificaçao.
+
+```{r Expand grid}
+
+
+
+
+
+
+```
+
+### 

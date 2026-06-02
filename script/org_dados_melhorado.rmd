@@ -1,0 +1,735 @@
+---
+title: "Organizado dados DataSUS Tabnet"
+author: "Raquel Martins Lana"
+date: "2026-06-01"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+  chunk_output_type: console
+---
+
+# 🌎 Disciplina: Impactos das Mudanças Climáticas na Saúde (PPGICS/Fiocruz)
+
+> 🎯 **Objetivos de Aprendizagem**
+>
+> -   **Compreender** o fluxo de extração e tratamento de dados brutos
+>     provenientes do DataSUS Tabnet.
+> -   **Dominar** técnicas de manipulação e reformatagem de tabelas
+>     (formatos horizontal e vertical) no ecossistema `tidyverse`.
+> -   **Integrar** bases de dados epidemiológicos com dados demográficos
+>     do IBGE para o cálculo de indicadores de saúde.
+> -   **Construir e interpretar** representações gráficas de séries
+>     temporais de incidência de doenças transmitidas por vetores
+>     (DTVs).
+
+> ## 🦟 Doenças Transmitidas por Vetores (DTV)
+>
+> #### 📊 Exemplo Prático: Dados de Casos Prováveis de Dengue (DataSUS Tabnet)
+>
+> ##### 🧑‍🏫 Docentes: Hermano, Izabel e Raquel (Aulas em 27/05/2026 e 03/06/2026)
+
+------------------------------------------------------------------------
+
+### 📚 Contexto Epidemiológico e Climático
+
+A distribuição espaço-temporal de Doenças Transmitidas por Vetores
+(DTVs), como a dengue, Zika e chikungunya, é fortemente influenciada por
+variáveis climáticas (temperatura, precipitação e umidade). O aumento
+global da temperatura média e a alteração nos regimes de chuvas expandem
+os nichos ecológicos dos vetores (como o mosquito *Aedes aegypti*),
+acelerando seu ciclo de reprodução e diminuindo o período de incubação
+extrínseco do vírus. Analisar dados históricos de incidência é
+fundamental para antecipar surtos e estruturar planos de adaptação do
+sistema de saúde pública frente às mudanças ambientais globais.
+
+------------------------------------------------------------------------
+
+#### 📁 Os Dados Brutos
+
+Os dados analíticos foram extraídos diretamente do [DataSUS
+Tabnet](https://datasus.saude.gov.br/informacoes-de-saude-tabnet/),
+compreendendo os **casos prováveis de dengue** agregados por município
+de residência (linhas) e meses de início dos primeiros sintomas
+(colunas) para o recorte temporal de 2020 a 2024. Cada grupo de trabalho
+da disciplina efetuou o download do arquivo correspondente a um estado
+brasileiro específico.
+
+O objetivo principal deste *script* é realizar o processo de **Limpeza e
+Governança de Dados (Data Wrangling)**, consolidando uma tabela
+unificada adaptada ao formato vertical (longo), que é o padrão ideal
+para modelagens e visualizações gráficas avançadas no ecossistema R. O
+fluxo foi planejado de forma semi-automatizada para mitigar tarefas
+repetitivas, sem ocultar os conceitos fundamentais do processo de
+aprendizagem pedagógica.
+
+------------------------------------------------------------------------
+
+#### ⚙️ Configuração do Ambiente R
+
+Nesta etapa, preparamos o ambiente operacional computacional,
+verificando, instalando (se necessário) e carregando as bibliotecas
+essenciais para a reprodutibilidade metodológica do protocolo.
+
+Os pacotes utilizados são: - `tidyverse`: Metacoleção de pacotes voltada
+para ciência de dados (inclui `ggplot2`, `dplyr`, `tidyr`, `readr`,
+entre outros). - `here`: Ferramenta estrutural que utiliza caminhos
+relativos baseados na raiz do projeto, eliminando quebras de código por
+diretórios locais absolutos.
+
+```{r Carregando pacotes}
+# 📦 Lista de pacotes necessários
+packages <- c("tidyverse", "here") 
+
+# ⬇️ Instalar pacotes que ainda não estão instalados
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages], 
+                   repos = "https://cloud.r-project.org")
+}
+
+# 🚀 Carregamento silencioso na memória operacional
+suppressPackageStartupMessages(
+  invisible(lapply(packages, library, character.only = TRUE))
+)
+
+cat("✅ Ambiente computacional configurado com sucesso!\\n")
+```
+
+### 📥 Carregando os dados e primeira etapa de limpeza
+
+⚠️ Alerta metodológico: ao exportar relatórios em formato .csv a partir
+do Tabnet, o sistema gera metadados textuais explicativos nas primeiras
+e últimas linhas do arquivo. Tentar ler esses arquivos diretamente sem
+tratar essas linhas resultará em falha crítica de tipagem das colunas
+(todas serão convertidas para texto devido às *strings* do cabeçalho
+informativo).
+
+💡 Dica: utilize sempre a função readLines() antes de carregar uma nova
+base de dados desconhecida. Ela permite inspecionar visualmente a
+estrutura de caracteres, identificar o caractere separador exato (; ou
+,) e contar quantas linhas devem ser ignoradas (skip).
+
+```{r Vendo linhas iniciais e separadores}
+# 🔍 Inspeção visual das primeiras 15 linhas de cada arquivo anual
+readLines(
+  here("dados", "minas_gerais_2020.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2021.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2022.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2023.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2024.csv"),
+  n = 15)
+
+```
+
+Com isso, podemos observar que as 3 primeiras linhas precisam ser
+excluidas, pois sao linhas de matadados. Verificamos também os
+separadores.
+
+Esse código é normalmente usado ao importar arquivos de texto (CSV, TXT,
+etc.), para garantir a correta interpretação dos caracteres e dos tipos
+de dados. O primeiro comando cria uma configuração regional por meio da
+funçao `locale`. Os parâmetros
+
+-   `encoding` = "latin1": informa que o arquivo utiliza a codificação
+    Latin-1 (ISO-8859-1), muito comum em arquivos produzidos por
+    sistemas brasileiros mais antigos.
+
+-   `decimal_mark` = "," :separador decimal utilizado nos números para
+    esse exemplo, 12,5 será interpretado como 12.5.
+
+-   `grouping_mark` = "." : separador de milhares, ou seja, 1.234 será
+    interpretado como 1234.
+
+-   `asciify` = FALSE: mantém caracteres acentuados (á, é, ç, ã, etc.)
+    sem convertê-los para o formato ASCII.
+
+O segundo comando define uma especificação de colunas para leitura de
+dados:
+
+-   `.default` = "c" Força a importação inicial de todas as colunas como
+    caractere, evitando que colunas vazias ou codificadas com caracteres
+    especiais quebrem a leitura.
+
+```{r Carregando os dados e excluindo as primeiras linhas}
+# Configuração regional adaptada para dados públicos brasileiros
+pt_br <- locale(
+  encoding = "latin1",
+  decimal_mark = ",",
+  grouping_mark = ".",
+  asciify = FALSE
+)
+
+colunas <- cols(.default = "c")
+
+# 📥 Importação individualizada das matrizes anuais
+d20 <- read_csv2(here("dados/minas_gerais_2020.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d21 <- read_csv2(here("dados/minas_gerais_2021.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d22 <- read_csv2(here("dados/minas_gerais_2022.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d23 <- read_csv2(here("dados/minas_gerais_2023.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d24 <- read_csv2(here("dados/minas_gerais_2024.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+```
+
+⚠️ **Alerta Metodológico**: Mensagens de Warning: Elas ocorrem porque o
+rodapé explicativo do arquivo ultrapassa os limites tabulares
+configurados para as colunas numéricas de meses.
+
+Para resolver isso, isolamos exclusivamente as linhas que representam
+municípios reais e removemos a última coluna de totais horizontais,
+mantendo apenas a distribuição mensal estrita.
+
+```{=html}
+Warning: One or more parsing issues, call problems() on your data frame for 
+details, e.g.: dat <- vroom(...) problems(dat)
+```
+
+A melhor opçao agora é abrir arquivo e ver quais linhas temos que
+excluir ao final de cada ano. Repare que até a linha 722 de d20, temos o
+padrao esperado. Da linha "Total" em diante, devemos excluir, assim como
+a última coluna chamada "Total", que é a coluna 14.
+
+💡 **Dica**: como puderam ver, há diferenças na quantidade de municípios
+com registros de casos. Dependendo da análise, é importante corrigir
+isso. Mais abaixo será disponibilizado um comando com essa
+funcionalidade.
+
+```{r Excluindo linhas e colunas}
+# ✂️ Limpeza manual baseado no limite físico de registros reais de cada tabela
+d20 <- d20[1:722, -14]
+d21 <- d21[1:569, -14]
+d22 <- d22[1:741, -14]
+d23 <- d23[1:824, -14]
+d24 <- d24[1:854, -14]
+
+# 📝 Conferindo
+tail(d20)
+tail(d21)
+tail(d22)
+tail(d23)
+tail(d24)
+
+```
+
+## 🛠️ Segunda etapa: formataça oestrutural de colunas
+
+A variável original referente ao município de residência acumula duas
+unidades de informação distintas na mesma *string*: o geocódigo ibge (6
+dígitos iniciais) e o nome literal do município. Para viabilizar
+cruzamentos futuros com bases de dados demográficos ou cartográficos,
+precisamos separar essa coluna em duas novas colunas. Adicionalmente,
+substituímos o caractere hífen "-" (utilizado pelo sistema para
+sinalizar ausência de registros) pelo valor estritamente numérico 0.
+
+Para tal, a funçao format_tabnet foi criada, para o seu o uso, é
+necessário apenas informar a tabela em questao.
+
+```{r Reformatando linhas e colunas}
+# ⚙️ Declaração da função modular de padronização estrutural
+# Execute uma vez a funçao abaixo
+format_tabnet <- function(df){
+
+  df %>%
+    mutate(
+      geocode = str_sub(`Município de residência`, 1, 6),
+      municipio = str_sub(`Município de residência`, 7)
+    ) %>%
+    select(-`Município de residência`) %>%
+    mutate(
+      across(
+        Jan:Dez,
+        ~ as.numeric(str_replace_all(.x, "-", "0"))
+      )
+    ) %>%
+    mutate(
+      municipio = str_trim(
+        str_remove_all(municipio, '"')
+      )
+    )
+}
+
+# ⚡ Aplicação da rotina de limpeza automatizada nas bases anuais
+d20 <- format_tabnet(d20)
+d21 <- format_tabnet(d21)
+d22 <- format_tabnet(d22)
+d23 <- format_tabnet(d23)
+d24 <- format_tabnet(d24)
+
+```
+
+## 📐 Verticalização das matrizes de dados
+
+Para conduzir análises longitudinais, estruturamos os dados no formato
+longo (vertical), onde cada linha mapeia uma observação espaço-temporal
+exclusiva (Município, Mês, Ano e Casos).
+
+Nesse caso é necessário informar a tabela e o ano correspondente.
+
+```{r Verticaliza dados}
+# 🔁 Função de pivotagem estrutural horizontal para vertical
+# Execute a funçao para verticalizar os dados e adicionar a variável ano
+vertical_dados <- function(df, ano) {
+  df %>%
+    gather(meses, casos, -c(geocode, municipio)) %>%
+    mutate(ano = ano)
+}
+
+# ⚡ Processamento e indexação cronológica por ano específico
+# Aplique a funçao para cada ano
+d20 <- vertical_dados(d20, 2020)
+d21 <- vertical_dados(d21, 2021)
+d22 <- vertical_dados(d22, 2022)
+d23 <- vertical_dados(d23, 2023)
+d24 <- vertical_dados(d24, 2024)
+
+```
+
+💡 **Dica**: comparem a diferença com o comando `head(d20)` em seu
+console R para inspecionar visualmente como a tabela foi reestruturada
+de forma otimizada para análise de dados.
+
+Uma vez normalizadas as colunas, podemos realizar o empilhamento
+completo de todas as tabelas anuais em um único objeto de dados.
+
+⚠️ **Alerta metodológico**: ara isso funcionar bem, antes é preciso
+garantir que as mesmas colunas estejam presentes em todos os anos e que
+sejam do mesmo tipo.
+
+```{r Juntando todos os anos}
+# 🧲 Consolidação unificada por empilhamento de linhas
+d <- bind_rows(d20,
+               d21,
+               d22,
+               d23,
+               d24)    
+```
+
+
+##### 📅 Construção da variável de data padrão
+
+Para estruturar e parametrizar as escalas cronológicas nos gráficos
+vetoriais de séries temporais, convertemos as strings de ano e meses em
+um objeto nativo da classe Date do R, indexando sistematicamente todas
+as observações no dia primeiro de cada mês.
+
+```{r Variável data}
+# 🗺️ Mapeamento de texto para inteiros e formatação cronológica clássica
+d <- d %>%
+    mutate(
+      data = as.Date(paste0(ano, "-", 
+                            match(meses,
+                            c("Jan","Fev","Mar","Abr","Mai","Jun","Jul",
+                              "Ago","Set","Out","Nov","Dez")),
+                            "-01"))) %>% 
+  select(muni_code = geocode, muni_name = municipio, data, meses, ano, casos)
+```
+
+Vamos conferir as variáveis?
+
+```{r Conferindo}
+# 🔍 Identificação de artefatos residuais e ruídos cadastrais
+unique(d$muni_code) 
+# ⚠️ Alerta Metodológico: O código fictício "MUNICI" representa "
+# Município Ignorado"
+# Essa marcação ocorre quando o sistema não consegue identificar a cidade de 
+#residência do paciente.
+
+# 🧼 Exclusão sistemática de ruídos para garantir integridade espacial
+d %>% filter(muni_code == "MUNICI")
+
+d <- d %>% 
+  filter(muni_code != "MUNICI") # 853
+
+# ✅ Validação final de consistência e completude cronológica
+unique(d$muni_code)
+# Quantos meses únicos? Falta algum?
+unique(d$meses)
+# E os anos?
+unique(d$ano)
+
+# Quantos meses ao todo?
+length(unique(d$data)) # Esperado: 60 (12 meses x 5 anos de amostragem)
+        
+```
+
+#### 🔄 Expansão da matriz para municípios sem notificação ativa
+
+⚠️ **Alerta metodológico**: se um município não registrou notificações
+em determinado ano, ele fica ausente do arquivo CSV gerado pelo Tabnet.
+Se computarmos as médias e estatísticas diretamente dessa tabela omissa,
+geraremos uma grave distorção epidemiológica (superestimando a
+incidência real). Precisamos forçar a inclusão de todos os 853
+municípios de Minas Gerais em todos os 60 meses históricos do estudo,
+inserindo o valor zero nas lacunas reais.
+
+O banco expandido resultante conterá exatamente
+$853 \text{ municípios} \times 12 \text{ meses} \times 5 \text{ anos} = 51.180 \text{ linhas}$.
+
+```{r Expand grid}
+# 🔢 Cálculo do tamanho teórico de referência para validação
+total_linhas <- 853 * 12 * 5
+cat("Total de linhas esperado:", total_linhas, "\\n")
+
+# 📅 Extração do calendário de referência temporal sem duplicatas
+calendario <- d %>%
+  distinct(data, ano, meses)
+
+# 🗺️ Isolamento do cadastro de municípios georreferenciados unificados
+municipios <- d %>%
+  distinct(muni_code, muni_name)
+
+# 🧬 Expansão combinatória combinando cada município a todas as unidades temporais possíveis
+dexp <- merge(municipios, calendario, all = TRUE)
+
+# 🔀 Cruzamento estrutural e imputação controlada de dados ausentes (zeros)
+dcompleto <- dexp %>%
+  left_join(
+    d,
+    by = c("muni_code", "muni_name", "data", "ano", "meses")
+  ) %>%
+  mutate(casos = coalesce(casos, 0))
+
+# ✅ Conferindo
+unique(dcompleto$muni_code) 
+
+# Quantos meses únicos? Falta algum?
+unique(dcompleto$meses)
+# E os anos?
+unique(dcompleto$ano)
+
+# Quantos meses ao todo?
+length(unique(dcompleto$data)) # 60: 12 meses x 5 anos
+```
+
+### 👥 Integração de dados demográficos e estimativas populacionais
+
+Para converter o número absoluto de casos em uma métrica epidemiológica
+comparável entre diferentes territórios, precisamos ponderar os
+registros pelo tamanho da população exposta ao risco. Utilizaremos as
+estimativas históricas consolidadas do Censo e TCU organizadas e
+disponibilizadas publicamente [GitHub do pesquisador Leonardo
+Bastos](https://github.com/lsbastos/popBR_mun) da Fiocruz.
+
+> **`.csv`:** formato universal, legível por qualquer software (Excel,
+> Python, QGIS, etc.). Ideal para compartilhar os dados com outros
+> usuários ou utilizá-los fora do R. A desvantagem é que os tipos de
+> colunas (datas, fatores, etc.) não são preservados automaticamente na
+> leitura — precisam ser reconvertidos.
+
+```{r Populaçao}
+# ⬇️ Importação direta via canal URL do repositório de dados populacionais longos
+pop <- read.csv("https://raw.githubusercontent.com/lsbastos/popBR_mun/refs/heads/master/popBR2000-2024.long.csv")
+
+# 📍 Recorte espacial restrito ao estado de Minas Gerais (Prefixo IBGE: 31)
+pop_mg <- pop %>%
+  filter(
+    str_starts(as.character(MUNCOD), "31"),
+    Ano %in% 2020:2024
+  )
+
+unique(pop_mg$Ano)
+unique(pop_mg$MUNCOD)
+
+# 💡 Dica para Estudantes: Salve este arquivo populacional em seu disco rígido local
+# para evitar requisições web redundantes e demoradas a cada nova execução do script.
+# write.csv(pop_mg, "dados/pop_mg.csv", row.names = F) # -----> EDITE o nome do arquivo
+
+# Caso necesite carregar novamente esse dados, se já tiver salvo, faça:
+# pop_mg <- read_csv("dados/pop_mg.csv") # -----> EDITE o nome do arquivo
+
+```
+
+O conteúdo da tabela é:
+
+-   `MUNCOD` - código do município
+
+-   `MUN` - nome do município
+
+-   `Ano` - ano
+
+-   `POP` - população por município/ano (Censo para os anos 2010 e 2022,
+    e projetada para TCU para os anos 2011 a 2021).
+    
+
+#### 🔗 Fusão das bases de fados (Casos $\times$ População)
+
+Para conseguirmos mais facilmente adicionar a populaçao à tabela de
+casos, vamos editar alguns nomes de coluna para facilitar a junçao de
+tabelas. Também formatamos o tipo das variáveis para compatibilizar os
+tipos de chaves lógica ou de ligaçao.
+
+```{r Junçao de tabelas}
+# 🔧 Ajuste de nomenclatura e tipagem de colunas para junção relacional
+pop_mg <- pop_mg %>% 
+  mutate(muni_code = as.character(MUNCOD)) %>% 
+  rename(ano = Ano) %>% 
+  select(-c(MUNCOD))
+
+# 🖇️ Fusão de tabelas e limpeza de colunas duplicadas redundantes
+dcompleto <- left_join(dcompleto, pop_mg) %>% 
+  select(-MUN) %>% 
+  rename(pop = POP)
+```
+
+#### 🧮 Calculo da taxa de incidencia
+
+A taxa de incidência expressa o risco de ocorrência de novos casos na
+população ao longo de um período determinado, sendo tradicionalmente
+mensurado para dengue por uma base multiplicadora de 100.000 habitantes.
+
+$$\text{Incidência} = \left( \frac{\text{Casos Ativos}}{\text{População Residente}} \right) \times 100.000$$
+
+```{r Incidencia}
+# 🖩 Cálculo analítico do indicador de taxa de incidência populacional
+dcompleto$incidencia <- (dcompleto$casos / dcompleto$pop) * 100000  
+
+head(dcompleto)
+```
+
+#### 💾 Salvando a base consolidada
+
+Se ainda nao salvou a base, descomente e execute a linha abaixo:
+```{r Salvando a tabela}
+# 💾 Salvamento físico do arquivo final na pasta de resultados
+#write.csv(dcompleto, "resultados/dengue_mensal_minas_gerais_2020-2024.csv", row.names = F)
+
+```
+
+#### 📈 Visualização de dados e análise gráfica (Séries Temporais)
+
+Com a base tratada, iniciamos a fase de análise visual de padrões
+epidemiológicos em diferentes escalas de análise.
+
+
+📍 Cenário Municipal 1: Evolução histórica de casos em Abaeté (MG)
+
+```{r plot casos}
+# 📉 Plotagem da evolução de casos absolutos em Abaeté
+dcompleto %>%
+  filter(muni_code == 310020) %>%
+  ggplot(aes(x = data, y = casos)) +
+  geom_line(linewidth = 0.8, color = "blue") +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Série temporal mensal de casos de dengue",
+    subtitle = "Abaeté (MG), 2020–2024",
+    x = NULL,
+    y = "Casos"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 9),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+```
+
+
+📍 Cenário Municipal 2: taxa de incidência em Belo Horizonte (MG)
+
+```{r plot incidencia}
+# 📉 Plotagem da taxa de incidência padronizada na capital mineira
+dcompleto %>%
+  filter(muni_code == 310620) %>%
+  ggplot(aes(x = data, y = incidencia)) +
+  geom_line(linewidth = 0.8, color = "red") +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Incidência de dengue em Belo Horizonte (MG)",
+    x = NULL,
+    y = "Incidência por 100 mil habitantes"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 9),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+
+```
+
+📈 **Interpretação baseada em evidências**: a escala visual gerada pelo
+ano epidemiológico de 2024 é tão massiva que provoca um forte efeito de
+achatamento nos anos anteriores (2020 a 2023). Isso indica que a
+magnitude do surto de 2024 foi atípica em comparação com a série
+histórica recente de Belo Horizonte.
+
+💡 **Dica**: quando um evento extremo achatar o histórico da sua série,
+remova temporariamente o ano atípico para investigar de forma clara a
+dinâmica sazonal e o comportamento de fundo dos períodos anteriores.
+
+```{r plot incidencia sem 2024}
+# 📉 Zoom analítico excluindo a grande epidemia de 2024
+dcompleto %>%
+  filter(muni_code == 310620, ano != 2024) %>%
+  ggplot(aes(x = data, y = incidencia)) +
+  geom_line(linewidth = 0.8, color = "red") +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Incidência de dengue em Belo Horizonte (MG)",
+    x = NULL,
+    y = "Incidência por 100 mil habitantes"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 9),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+
+```
+
+📈 Interpretação Baseada em Evidências (Zoom Sem 2024): Sem o ano
+epidêmico extremo de 2024, torna-se evidente o comportamento cíclico e
+altamente sazonal da dengue na capital. Os picos ocorrem invariavelmente
+nos primeiros semestres de cada ano (coincidindo com os meses mais
+quentes e chuvosos da transição do verão para o outono). Há também uma
+clara variação interanual: o ano de 2021 apresentou uma transmissão
+visivelmente reduzida, contrastando com o ano epidêmico de 2023.
+
+
+#### 🗺️ Cenário Macrorregional: Agregação Consolidada do Estado de Minas Gerasi
+
+Para gerar uma síntese do comportamento do agravo no território,
+agregamos os valores numéricos de todos os 853 municípios, estimando um
+indicador mensal unificado para todo o estado de Minas Gerais.
+
+```{r agregaçao estado}
+# 🏗️ Agrupamento espaço-temporal e sumarização macroepidemiológica
+dmg <- dcompleto %>%
+  group_by(data) %>% 
+  summarise(casos = sum(casos),
+            pop = sum(pop)) %>% 
+  mutate(incidencia = casos / pop * 100000)
+
+```
+
+Veja por estado:
+
+```{r casos estado}
+# 📉 Monitoramento longitudinal de casos agregados estaduais
+dmg %>%   
+  ggplot(aes(x = data, y = casos)) +
+  geom_line(linewidth = 0.8) +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Casos de dengue em Minas Gerais",
+    x = NULL,
+    y = "Casos"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 9),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+```
+
+```{r incidencia estado}
+# 📉 Taxa de incidência consolidada para o estado de Minas Gerais
+dmg %>%   
+  ggplot(aes(x = data, y = incidencia)) +
+  geom_line(linewidth = 0.8) +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Incidência de dengue em Minas Gerais",
+    x = NULL,
+    y = "Incidência por 100 mil habitantes"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 9),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+
+```
+
+📈 **Interpretação baseada em evidências (Cenário Estadual)**: a
+dinâmica agregada para o estado reflete o mesmo padrão observado em Belo
+Horizonte, confirmando que a epidemia de 2024 foi um fenômeno
+generalizado em escala regional, e não um surto localizado. Os picos de
+incidência ocorrem de forma síncrona no primeiro semestre de cada ano. O
+monitoramento contínuo dessas curvas é de grande importância para o
+planejamento e para a alocação de insumos emergenciais pelas autoridades
+de saúde pública estaduais.
+
+#### ✅ Conclusão Pedagógica Final
+
+Nesta atividade prática de laboratório, consolidamos um fluxo completo
+de tratamento de dados de saúde pública: de arquivos CSV brutos do
+DataSUS Tabnet a uma base de dados limpa e pronta para uso em análises
+científicas. Aprendemos a contornar as inconsistências comuns como
+linhas de metadados, codificações regionais e omissões estruturais de
+municípios sem registros. A conversão para o formato longo e a posterior
+integração com as projeções populacionais do IBGE nos permitiram avançar
+da análise de números absolutos para indicadores epidemiológicos
+padronizados (Taxas de Incidência). O domínio desse fluxo metodológico
+constitui a base fundamental para estudos de modelagem estatísitica e
+preditiva aplicados aos impactos das mudanças globais do clima na saúde
+humana.

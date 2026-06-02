@@ -11,7 +11,7 @@ editor_options:
 
 # Disciplina Impactos das Mudanças Climáticas na Saúde (PPGICS/Fiocruz)
 
-> ## Doenças transmitidas por vetor (DTV)  
+> ## Doenças transmitidas por vetor (DTV)
 >
 > #### Exemplo em aula: dados de casos de dengue DataSUS Tabnet
 >
@@ -439,7 +439,16 @@ dcompleto$incidencia <- (dcompleto$casos / dcompleto$pop) * 100000
 head(dcompleto)
 ```
 
-Visualizando:
+#### Salvando a tabela final
+
+```{r Salvando a tabela}
+write.csv(dcompleto, "resultados/dengue_mensal_minas_gerais_2020-2024.csv", row.names = FALSE)
+
+```
+
+#### Visualizaçoes
+
+Série de casos:
 
 ```{r plot casos}
 dcompleto %>%
@@ -468,7 +477,7 @@ dcompleto %>%
   )
 ```
 
-Gráfico para incidencia:
+Série de incidencia:
 
 ```{r plot incidencia}
 dcompleto %>%
@@ -527,6 +536,8 @@ dcompleto %>%
   )
 
 ```
+
+#### Visualizaçao para casos e incidência agregada pelo estado
 
 Visualizaçao para casos no estado de Minas Gerais. A mesma populaçao foi
 utilizada em todos os meses, uma vez que temos apenas a estivamativa

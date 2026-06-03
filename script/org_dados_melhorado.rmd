@@ -100,6 +100,14 @@ suppressPackageStartupMessages(
   invisible(lapply(packages, library, character.only = TRUE))
 )
 
+# 🚫 Evitar notação científica global na sessão do R
+# ⚙️ 'scipen' (scientific penalty) define uma "penalidade" para o R não usar a notação científica (como 1e+05).
+# 🔢 O padrão do R é 0. Ao mudar para 999, você força o R a preferir a notação decimal fixa (ex: 100000).
+options(scipen = 999)
+
+# 🔄 Para voltar a usar a notação científica padrão do R, descomente a linha abaixo:
+# options(scipen = 0)
+
 cat("✅ Ambiente computacional configurado com sucesso!\\n")
 ```
 
@@ -576,11 +584,12 @@ Se ainda não salvou a base, descomente e execute a linha abaixo:
 Com a base tratada, iniciamos a fase de análise visual de padrões
 epidemiológicos em diferentes escalas de análise.
 
-📍 Cenário Municipal 1: Evolução histórica de casos em Abaeté (MG)
+📍 **Cenário Municipal 1**: evolução histórica de casos em Abaeté (MG)
 
 ```{r plot casos}
 # 📉 Plotagem da evolução de casos absolutos em Abaeté
-d %>%
+# 📦 1. Armazena o gráfico no objeto 'plot_abaete', isso facilita para salvar a figura
+plot_abaete <- d %>%
   filter(muni_code == 310020) %>%
   ggplot(aes(x = data, y = casos)) +
   geom_line(linewidth = 0.8, color = "blue") +
@@ -604,9 +613,44 @@ d %>%
     axis.title.y = element_text(size = 8),
     plot.title = element_text(size = 10, face = "bold")
   )
+
+
+# 💾 2. Comando para salvar o gráfico acima em png
+ggsave(
+  plot = plot_abaete,                           # 🎯 Indica qual gráfico salvar
+  filename = "resultados/grafico_abaete_dengue.png", # 📂 Caminho e nome do arquivo (mude a pasta se necessário)
+  width = 7,                                    # 📏 Largura em polegadas
+  height = 5,                                   # 📐 Altura em polegadas
+  dpi = 300                                     # 🔍 Resolução alta (ideal para artigos/relatórios)
+)
+
+
+# 💾 3. Comando para salvar o gráfico acima em pdf
+ggsave(
+  plot = plot_abaete,                      # 🎯 Indica qual gráfico salvar
+    filename = "grafico_abaete_dengue.pdf", # 📄 Salvando em formato PDF (vetorial, não perde qualidade)
+  width = 18,                              # 📏 Dimensões em centímetros se mudar o 'units'
+  height = 12,
+  units = "cm"                             # ⚙️ Define a unidade de medida (pode ser "in", "cm" ou "mm")
+)
 ```
 
-📍 Cenário Municipal 2: taxa de incidência em Belo Horizonte (MG)
+💡 Recomendações Técnicas:
+
+-   **Dimensões** (`width` e `height`)**:** definir o tamanho
+    manualmente impede que o R salve o gráfico com base no tamanho da
+    sua tela atual do RStudio, o que costuma distorcer textos e
+    legendas.
+
+-   **Formatos:** use `.png` para apresentações digitais ou
+    Word/Markdown e `.pdf` se precisar enviar para publicação científica
+    de alta qualidade gráfica. Há outras possibilidades també como
+    `.tiff`, `.jpg`, `.svg`.
+
+📐 Altere as dimensões e veja o que acontece! 🔄 💾 Tente salvar as
+próximas figuras com o exemplo acima!!! 📉
+
+📍 **Cenário Municipal 2**: taxa de incidência em Belo Horizonte (MG)
 
 ```{r plot incidencia}
 # 📉 Plotagem da taxa de incidência padronizada na capital mineira
@@ -819,7 +863,7 @@ Observe detalhadamente o que cada parte do código faz!
 
 ```{r mapa casos}
 # 🎨 Construindo o mapa com o ggplot2
-ggplot(data = mapa_casos20) +
+m20 <- ggplot(data = mapa_casos20) +
   # 🟢 Desenha a geometria dos municípios (sf) e preenche com a cor baseada no número de casos
   geom_sf(aes(fill = casos), color = "white", size = 0.1) +
   
@@ -846,6 +890,62 @@ ggplot(data = mapa_casos20) +
     plot.subtitle = element_text(size = 10, hjust = 0.5, face = "italic"),
     legend.position = "right"
   )
+
+# 💾 Salvando o mapa de distribuição de casos
+ggsave(
+  plot = m20,                                # 🎯 Especifica o objeto do mapa armazenado
+  filename = "resultados/mapa_mg_casos_2020.png", # 📂 Caminho e nome do arquivo de saída
+  width = 8,                                 # 📏 Largura calibrada para o formato geométrico de MG
+  height = 7,                                # 📐 Altura balanceada para manter a proporção espacial
+  dpi = 300                                  # 🔍 Alta resolução para relatórios e publicações
+)
+
+```
+
+💡 **Dica de ouro para mapas:** mapas baseados em objetos `sf` (Spatial
+Features) são sensíveis à distorção de escala. Se notar que o mapa de
+Minas Gerais ficou muito "esticado" ou "achatado", altere levemente os
+valores de `width` ou `height` até encontrar o encaixe perfeito para o
+seu layout.
+
+######## 💾 Exportação em múltiplas formas, descomente o código caso queira salvar em um desses formatos. Para o último, é preciso o pacote informado.
+
+```{r export}
+# 🖼️ JPG (Ideal para apresentações e compartilhamento rápido)
+# ggsave(
+#   filename = "resultados/mapa_mg_casos_2020.jpg",
+#   plot = m20, 
+#   width = 8, 
+#   height = 7, 
+#   dpi = 300
+# )
+
+# 📄 PDF (Formato vetorial padrão para relatórios acadêmicos)
+# ggsave(
+#   filename = "resultados/mapa_mg_casos_2020.pdf",
+#   plot = m20, 
+#   width = 8, 
+#   height = 7
+# )
+
+# 🖨️ TIFF (Alta qualidade sem perdas, exigido por revistas científicas)
+# ggsave(
+#   filename = "resultados/mapa_mg_casos_2020.tiff",
+#   plot = m20, 
+#   width = 8, 
+#   height = 7, 
+#   dpi = 300,
+#   compression = "lzw" # Reduz o tamanho do arquivo sem perder qualidade
+# )
+
+# 🌐 SVG (Vetor nativo para web e edição no Inkscape/Illustrator)
+# Nota: Requer o pacote 'svglite' instalado (install.packages("svglite"))
+# ggsave(
+#   filename = "resultados/mapa_mg_casos_2020.svg",
+#   plot = m20, 
+#   width = 8, 
+#   height = 7
+# )
 ```
 
 #### ✅ Conclusão pedagógica final

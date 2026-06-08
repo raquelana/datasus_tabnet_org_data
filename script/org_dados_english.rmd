@@ -1,0 +1,953 @@
+---
+title: "DataSUS Tabnet data organisation"
+author: "Raquel Martins Lana"
+date: "2026-06-08"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+Warning: English version is not finished.
+
+# 🌎 Course: Impacts of Climate Change on Health (PPGICS/Fiocruz)
+
+> 🎯 **Learning Objectives**
+>
+> -   **Understand** the workflow of extracting and treating raw data
+>     originating from DataSUS Tabnet.
+> -   **Master** table manipulation and reformatting techniques
+>     (horizontal and vertical formats).
+> -   **Integrate** epidemiological databases with demographic data from
+>     IBGE to calculate health indicators.
+> -   **Build and interpret** graphical representations of time series
+>     for the incidence of vector-borne diseases (VBDs).
+
+> ## 🦟 Vector-Borne Diseases (VBD)
+>
+> #### 📊 Practical example: data on probable dengue cases (DataSUS Tabnet)
+>
+> ##### 🧑‍🏫 Lecturers: **Hermano Albuquerque, Izabel Reis and Raquel Lana (Lectures on 27/05/2026 and 03/06/2026)**
+
+------------------------------------------------------------------------
+
+### 📚 Epidemiological and climate context
+
+The spatiotemporal distribution of Vector-Borne Diseases (VBDs), such as
+dengue, Zika, and chikungunya, is strongly influenced by climate
+variables (temperature, precipitation, and humidity). The global
+increase in mean temperature and shifts in rainfall regimes expand the
+ecological niches of vectors (such as the *Aedes aegypti* mosquito),
+accelerating their reproductive cycle and shortening the extrinsic
+incubation period of the virus. Analysing historical incidence data is
+fundamental to anticipating outbreaks and structuring adaptation plans
+for the public health system in the face of global environmental
+changes.
+
+------------------------------------------------------------------------
+
+#### 📁 The Raw Data
+
+The analytical data were extracted directly from [DataSUS
+Tabnet](https://datasus.saude.gov.br/informacoes-de-saude-tabnet/),
+comprising **probable dengue cases** aggregated by municipality of
+residence (rows) and months of onset of the first symptoms (columns) for
+the temporal window from 2020 to 2024. Each course working group
+downloaded the file corresponding to a specific Brazilian state.
+
+The main objective of this *script* is to carry out the **Data Cleaning
+and Organisation** process, consolidating a unified table adapted to the
+vertical (long) format, which is the ideal standard for advanced
+modelling and graphical visualisations in R. The workflow was planned in
+a semi-automated manner to mitigate repetitive tasks without obscuring
+the fundamental concepts of the pedagogical learning process.
+
+------------------------------------------------------------------------
+
+#### ⚙️ Environment Configuration
+
+In this stage, we prepare the computational operational environment,
+verifying, installing (if necessary), and loading the essential
+libraries for the methodological reproducibility of the protocol.
+
+The packages used are:
+
+`tidyverse`: a collection of packages designed for data science
+(includes `ggplot2`, `dplyr`, `tidyr`, `readr`, among others).
+
+`here`: a structural tool that uses relative paths based on the project
+root, eliminating code breakage caused by absolute local directories.
+
+`sf`: for working with geospatial data (Simple Features).
+
+`geobr`: automatic *download* of official data and maps of geographic
+boundary polygons from IBGE directly into R.
+
+```{r Loading packages}
+# 📦 List of required packages
+packages <- c("tidyverse", "here", "sf", "geobr") 
+
+# ⬇️ Install packages that are not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages], 
+                   repos = "[https://cloud.r-project.org](https://cloud.r-project.org)")
+}
+
+# 🚀 Silent loading into operational memory
+suppressPackageStartupMessages(
+  invisible(lapply(packages, library, character.only = TRUE))
+)
+
+# 🚫 Avoid global scientific notation in the R session
+# ⚙️ 'scipen' (scientific penalty) defines a "penalty" so R does not use scientific notation (such as 1e+05).
+# 🔢 The default R value is 0. By changing it to 999, you force R to prefer fixed decimal notation (e.g. 100000).
+options(scipen = 999)
+
+# 🔄 To revert to the default R scientific notation, uncomment the line below:
+# options(scipen = 0)
+
+cat("✅ Computational environment configured successfully!\\n")
+```
+
+### 📥 Loading Data and First Cleaning Stage
+
+⚠️ **Methodological alert:** when exporting reports in `.csv` format
+from Tabnet, the system generates explanatory textual metadata in the
+first and last lines of the file. Attempting to read these files
+directly without treating these lines will result in a critical
+column-typing failure (all columns will be converted to text due to the
+informative header strings). To clarify, a string in its literal
+translation is a "string of characters" — here it means any text inside
+a computer code. A variable that is a string is always enclosed in
+single or double quotation marks.
+
+💡 **Tip**: use the `readLines()` function before loading a new,
+unfamiliar database. It allows you to visually inspect the character
+structure, identify the exact separator character (`;` or `,`), and
+count how many rows should be ignored at the beginning (`skip`).
+
+```{r Looking at initial lines and separators}
+readLines(
+  here("dados", "minas_gerais_2020.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2021.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2022.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2023.csv"),
+  n = 15)
+
+readLines(
+  here("dados", "minas_gerais_2024.csv"),
+  n = 15)
+```
+
+With this, we can observe that the first 3 lines need to be excluded, as
+they are metadata rows. We also verified the separators.
+
+This code is normally used when importing text files (`.csv`, `.txt`,
+etc.) to ensure the correct interpretation of characters and data types.
+The first command creates a regional configuration using the `locale`
+function. The parameters are:
+
+-   `encoding` = "latin1": states that the file uses `Latin-1`
+    (ISO-8859-1) encoding, very common in files produced by older
+    Brazilian systems.
+
+-   `decimal_mark` = "," : the decimal separator used in numbers for
+    this example, meaning 12,5 will be interpreted as 12.5.
+
+-   `grouping_mark` = "." : the thousands separator, meaning 1.234 will
+    be interpreted as 1234.
+
+-   `asciify` = FALSE: preserves accented characters (á, é, ç, ã, etc.)
+    without converting them to ASCII format.
+
+The second command defines a column specification for data reading:
+
+-   `.default` = "c": Forces the initial import of all columns as
+    characters, preventing empty columns or columns encoded with special
+    characters from breaking the data import.
+
+```{r Loading the data and deleting the first few rows}
+# Regional configuration adapted for Brazilian public data
+pt_br <- locale(
+  encoding = "latin1",
+  decimal_mark = ",",
+  grouping_mark = ".",
+  asciify = FALSE
+)
+
+colunas <- cols(.default = "c")
+
+# 📥 Individual import of annual matrices
+d20 <- read_csv2(here("dados/minas_gerais_2020.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d21 <- read_csv2(here("dados/minas_gerais_2021.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d22 <- read_csv2(here("dados/minas_gerais_2022.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d23 <- read_csv2(here("dados/minas_gerais_2023.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+
+d24 <- read_csv2(here("dados/minas_gerais_2024.csv"), 
+                 locale = pt_br, 
+                 col_types = colunas, 
+                 skip = 3)
+```
+
+⚠️ **Methodological Alert**: *Warning* messages occur because the
+explanatory footer of the file exceeds the tabular limits configured for
+the columns. To resolve this, we isolate exclusively the rows that
+represent actual municipalities, excluding the entire footer, and we
+also remove the last column of horizontal totals, keeping only the
+strict monthly distribution. The message should look like this, do not
+be alarmed!
+
+```{=html}
+Warning: One or more parsing issues, call problems() on your data frame for 
+details, e.g.: dat <- vroom(...) problems(dat)
+```
+
+The best option now is to open the file and see which rows we need to
+exclude at the end of each year. Notice that up to row 854 of `d20`, we
+have the expected pattern. From the "Total" row onwards, we must exclude
+it, as well as the last column named "Total", which is column 14. Even
+if all years have the same number of rows, it is important to open them
+one by one and check. This was only possible because when downloading
+the data, it was requested that zero-count municipalities were also
+included! Do you remember?
+
+💡 **Tip**: as you can see from the way the data were downloaded, there
+is no difference in the quantity of municipalities in Minas Gerais. This
+probably means that over these years, there was no change in the number
+of municipalities in the state.
+
+```{r Excluding lines and columns}
+# ✂️ Manual cleaning based on the physical limit of actual records in each table
+d20 <- d20[1:854, -14]
+d21 <- d21[1:854, -14]
+d22 <- d22[1:854, -14]
+d23 <- d23[1:854, -14]
+d24 <- d24[1:854, -14]
+
+# 📝 Checking
+tail(d20)
+tail(d21)
+tail(d22)
+tail(d23)
+tail(d24)
+```
+
+## 🛠️ Second Stage: Structural Column Formatting
+
+The original variable regarding the municipality of residence stores two
+distinct units of information within the same string: the municipal
+geocode (the first 6 digits of the column) and the literal name of the
+municipality. To enable future cross-referencing with demographic or
+cartographic databases, we need to separate this column into two new
+columns.
+
+Additionally, in the case record information per month, we replace the
+hyphen character "-" (used by the system to signal the absence of
+records) with the strictly numerical value 0.
+
+To achieve this, the `format_tabnet()` function was created. To use it,
+you only need to provide the table or object in question.
+
+⚠️ **Methodological alert**: the IBGE municipal geocode has 7 digits,
+whereas DataSUS uses 6. Therefore, at times, it will be necessary to
+exclude the seventh digit from data originating from IBGE. We will not
+encounter this issue in this routine.
+
+```{r Reformating lines and columns}
+# ⚙️ Declaration of the modular structural standardisation function
+# Run the function below once
+format_tabnet <- function(df){
+
+  df %>%
+    mutate(
+      geocode = str_sub(`Município de residência`, 1, 6),
+      municipio = str_sub(`Município de residência`, 7)
+    ) %>%
+    select(-`Município de residência`) %>%
+    mutate(
+      across(
+        Jan:Dez,
+        ~ as.numeric(str_replace_all(.x, "-", "0"))
+      )
+    ) %>%
+    mutate(
+      municipio = str_trim(
+        str_remove_all(municipio, '"')
+      )
+    )
+}
+
+# ⚡ Application of the automated cleaning routine to the annual databases
+d20 <- format_tabnet(d20)
+d21 <- format_tabnet(d21)
+d22 <- format_tabnet(d22)
+d23 <- format_tabnet(d23)
+d24 <- format_tabnet(d24)
+```
+
+Before proceeding to the next stage, open one of the years and see how
+it turned out!
+
+## 📐 Verticalisation of Data Matrices
+
+To conduct longitudinal analyses, we structure the data into a long
+(vertical) format, in which each row maps a unique spatiotemporal
+observation (Municipality, Month, Year, and Cases).
+
+```{r Verticalise data}
+# 🔁 Function for horizontal-to-vertical structural pivoting
+# Run the function to verticalise the data and add the year variable
+vertical_dados <- function(df, ano) {
+  df %>%
+    gather(meses, casos, -c(geocode, municipio)) %>%
+    mutate(ano = ano)
+}
+
+# ⚡ Processing and chronological indexing per specific year
+# Apply the function to each year
+d20 <- vertical_dados(d20, 2020)
+d21 <- vertical_dados(d21, 2021)
+d22 <- vertical_dados(d22, 2022)
+d23 <- vertical_dados(d23, 2023)
+d24 <- vertical_dados(d24, 2024)
+```
+
+💡 **Tip**: compare the difference using the `head(d20)` command in your
+R console to visually inspect how the table was restructured in an
+optimised way for data analysis.
+
+Once the columns are normalised, we can perform a full row binding of
+all annual tables into a single data object.
+
+⚠️ **Methodological alert**: for this to work correctly, you must first
+ensure that the columns are of the same data type. Since we loaded the
+data requesting all variables as characters, all columns across all
+years should share the same type. However, if you want to be certain,
+execute the `str(d20)` command in your R console, and so on for all
+years. If it is necessary to change a column type, use the example code
+below, adapting it to your case.
+
+```{r Joint years}
+# Changing a variable type - example
+# dexemplo <- dexemplo %>% 
+#  mutate(var1 = as.character(var1))
+# To change the type of more than one variable at the same time
+# dexemplo <- dexemplo %>% 
+#  mutate(across(c(var1, var2, var3), as.character))
+
+
+# 🧲 Unified consolidation by row binding
+d <- bind_rows(d20,
+               d21,
+               d22,
+               d23,
+               d24)
+```
+
+##### 📅 Building the Standard Date Variable
+
+To structure and parameterise the chronological scales in vector
+time-series plots, we convert the year and month strings into a native R
+`Date` class object, systematically indexing all observations to the
+first day of each month.
+
+```{r date variable}
+# 🗺️ Mapping text to integers and classic chronological formatting
+d <- d %>%
+    mutate(
+      data = as.Date(paste0(ano, "-", 
+                            match(meses,
+                            c("Jan","Fev","Mar","Abr","Mai","Jun","Jul",
+                              "Ago","Set","Out","Nov","Dez")),
+                            "-01"))) %>% 
+  select(muni_code = geocode, muni_name = municipio, data, meses, ano, casos)
+```
+
+Let's check the variables?
+
+```{r Checking}
+# 🔍 Identification of residual artifacts and registry noise
+unique(d$muni_code) 
+# ⚠️ Methodological Alert: The dummy code "MUNICI" represents "Unknown Municipality"
+# This marker occurs when the system cannot identify the patient's city of residence.
+
+# 🧼 Systematic exclusion of noise to ensure spatial integrity
+d %>% filter(muni_code == "MUNICI")
+
+d <- d %>% 
+  filter(muni_code != "MUNICI") # 853
+
+# ✅ Final validation of consistency and chronological completeness
+unique(d$muni_code)
+# How many unique months? Is any missing?
+unique(d$meses)
+# And the years?
+unique(d$ano)
+
+# How many total months?
+length(unique(d$data)) # Expected: 60 (12 months x 5 sampling years)
+```
+
+#### 🔄 Matrix Expansion for Municipalities Without Active Notification
+
+⚠️ **Methodological alert:** this stage may be necessary in certain
+cases, see below:
+
+1.  This stage applies only if there are differences in the
+    municipalities that appear in each year.
+
+2.  If a municipality did not register notifications in a given year, it
+    remains absent from the `csv` file generated by Tabnet, unless
+    zero-counts were requested. If we compute averages and statistics
+    directly from this omitted table, we will generate a severe
+    epidemiological distortion (overestimating the real incidence). We
+    need to force the inclusion of all 853 municipalities of Minas
+    Gerais across all 60 historical months of the study, inserting the
+    value zero into the actual gaps.
+
+The resulting expanded database will contain exactly
+
+$853 \text{ municipalities} \times 12 \text{ months} \times 5 \text{ years} = 51,180 \text{ rows}$.
+
+**If this is not your case, skip to the next section.**
+
+```{r Expand grid}
+# 🔢 Calculation of the theoretical baseline size for validation
+total_linhas <- 853 * 12 * 5
+cat("Expected total lines:", total_linhas, "\\n")
+
+# 📅 Extraction of the temporal reference calendar without duplicates
+calendario <- d %>%
+  distinct(data, ano, meses)
+
+# 🗺️ Isolation of the unified georeferenced municipality register
+municipios <- d %>%
+  distinct(muni_code, muni_name)
+
+# 🧬 Combinatorial expansion matching each municipality to all possible temporal units
+dexp <- merge(municipios, calendario, all = TRUE)
+
+# 🔀 Structural merging and controlled imputation of missing data (zeros)
+dcompleto <- dexp %>%
+  left_join(
+    d,
+    by = c("muni_code", "muni_name", "data", "ano", "meses")
+  ) %>%
+  mutate(casos = coalesce(casos, 0))
+
+# ✅ Checking
+unique(dcompleto$muni_code) 
+
+# How many unique months? Is any missing?
+unique(dcompleto$meses)
+# And the years?
+unique(dcompleto$ano)
+
+# How many total months?
+length(unique(dcompleto$data)) # 60: 12 months x 5 years
+
+```
+
+### 👥 Integration of Demographic Data and Population Estimates
+
+To convert the absolute number of cases into an epidemiological metric
+that is comparable across different territories, we need to weight the
+records by the size of the population exposed to the risk. We will use
+the consolidated historical estimates from the Census and TCU, organised
+and publicly shared on the [GitHub repository of researcher Leonardo
+Bastos](https://github.com/lsbastos/popBR_mun) from Fiocruz.
+
+> **`.csv`:** a universal format, readable by any software (Excel,
+> Python, QGIS, etc.). Ideal for sharing data with other users or using
+> them outside R. The disadvantage is that column types (dates, factors,
+> etc.) are not automatically preserved upon reading — they need to be
+> reconverted.
+
+```{r Population}
+# ⬇️ Direct import via URL channel of the long-format population data repository
+pop <- read.csv("[https://raw.githubusercontent.com/lsbastos/popBR_mun/refs/heads/master/popBR2000-2024.long.csv](https://raw.githubusercontent.com/lsbastos/popBR_mun/refs/heads/master/popBR2000-2024.long.csv)")
+
+# 📍 Spatial subset restricted to the state of Minas Gerais (IBGE Prefix: 31)
+pop_mg <- pop %>%
+  filter(
+    str_starts(as.character(MUNCOD), "31"),
+    Ano %in% 2020:2024
+  )
+
+unique(pop_mg$Ano)
+unique(pop_mg$MUNCOD)
+
+# 💡 Tip for Students: Save this population file to your local hard drive
+# to avoid redundant and time-consuming web requests on every new execution of the script.
+# write.csv(pop_mg, "dados/pop_mg.csv", row.names = F) # -----> EDIT the file name
+
+# If you need to reload these data, if already saved, run:
+# pop_mg <- read_csv("dados/pop_mg.csv") # -----> EDIT the file name
+```
+
+The content of the table is:
+
+-   `MUNCOD` - municipality code
+
+-   `MUN` - municipality name
+
+-   `Ano` - year
+
+-   `POP` - population per municipality/year (Census for the years 2010
+    and 2022, and projected via TCU for the years 2011 to 2021).
+
+#### 🔗 Database Fusion (Cases $\times$ Population) 
+
+To easily add the population to the cases table, let's edit some column
+names to facilitate the table join. We also format the variable types to
+make the logical key or linking fields compatible.
+
+```{r Joint tables}
+# 🔧 Adjustment of nomenclature and column typing for relational joining
+pop_mg <- pop_mg %>% 
+  mutate(muni_code = as.character(MUNCOD)) %>% 
+  rename(ano = Ano) %>% 
+  select(-c(MUNCOD))
+
+# 🖇️ Fusion of tables and cleaning of redundant duplicate columns
+d <- left_join(d, pop_mg) %>% 
+  select(-MUN) %>% 
+  rename(pop = POP)
+```
+
+#### 🧮 Calculation of the Incidence Rate
+
+The incidence rate expresses the risk of new cases occurring in the
+population over a specific period, traditionally measured for dengue
+using a multiplier base of 100,000 inhabitants.
+
+\$\$\\text{Incidence} = \\left( \\frac{\\text{Active
+Cases}}{\\text{Resident Population}} \\right) \\times 100,000\$\$
+
+```{r Incidence}
+# 🖩 Analytical calculation of the population incidence rate indicator
+d$incidencia <- d$casos / d$pop * 100000  
+
+head(d)
+```
+
+#### 💾 Saving the Consolidated Database
+
+If you have not saved the database yet, uncomment and execute the line
+below:
+
+```{r Saving table}
+# 💾 Physical saving of the final file in the results folder
+# write.csv(d, "resultados/dengue_mensal_minas_gerais_2020-2024.csv", row.names = F)
+```
+
+### 📈 Data Visualisation and Graphical Analysis (Time Series)
+
+With the treated database, we begin the visual analysis phase of
+epidemiological patterns across different analysis scales.
+
+📍 **Municipal Scenario 1**: historical evolution of cases in Abaeté
+(MG)
+
+```{r}
+# 📉 Plotting the evolution of absolute cases in Abaeté
+# 📦 1. Stores the plot in the object 'plot_abaete', making it easier to save the figure
+plot_abaete <- d %>%
+  filter(muni_code == 310020) %>%
+  ggplot(aes(x = data, y = casos)) +
+  geom_line(linewidth = 0.8, color = "blue") +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Monthly time series of dengue cases",
+    subtitle = "Abaeté (MG), 2020–2024",
+    x = NULL,
+    y = "Cases"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 8),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+
+
+# 💾 2. Command to save the plot above as a png
+ggsave(
+  plot = plot_abaete,                           # 🎯 Indicates which plot to save
+  filename = "resultados/grafico_abaete_dengue.png", # 📂 Path and file name (change folder if necessary)
+  width = 7,                                    # 📏 Width in inches
+  height = 5,                                   # 📐 Height in inches
+  dpi = 300                                     # 🔍 High resolution (ideal for articles/reports)
+)
+
+
+# 💾 3. Command to save the plot above as a pdf
+ggsave(
+  plot = plot_abaete,                      # 🎯 Indicates which plot to save
+  filename = "grafico_abaete_dengue.pdf",  # 📄 Saving in PDF format (vectorial, does not lose quality)
+  width = 18,                              # 📏 Dimensions in centimetres if changing 'units'
+  height = 12,
+  units = "cm"                             # ⚙️ Defines the measurement unit (can be "in", "cm" or "mm")
+)
+```
+
+💡 Technical Recommendations:
+
+-   **Dimensions** (`width` and `height`)**:** setting the size manually
+    prevents R from saving the plot based on your current RStudio screen
+    size, which usually distorts text and legends.
+
+-   **Formats:** use `.png` for digital presentations or Word/Markdown,
+    and `.pdf` if you need to submit for scientific publication
+    requiring high graphical quality. There are other possibilities too,
+    such as `.tiff`, `.jpg`, `.svg`.
+
+📐 Change the dimensions and see what happens! 🔄 💾 Try saving the next
+figures using the example above!!! 📉
+
+📍 **Municipal Scenario 2**: incidence rate in Belo Horizonte (MG)
+
+```{r}
+# 📉 Plotting the standardised incidence rate in the state capital
+d %>%
+  filter(muni_code == 310620) %>%
+  ggplot(aes(x = data, y = incidencia)) +
+  geom_line(linewidth = 0.8, color = "red") +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Dengue incidence in Belo Horizonte (MG)",
+    x = NULL,
+    y = "Incidence per 100,000 inhabitants"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 9),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+```
+
+📈 **Evidence-based interpretation**: the visual scale generated by the
+epidemiological year of 2024 is so massive that it causes a sharp
+flattening effect on the previous years (2020 to 2023). This indicates
+that the magnitude of the 2024 outbreak was atypical compared to the
+recent historical series of Belo Horizonte.
+
+💡 **Tip**: when an extreme event flattens the history of your series,
+temporarily remove the atypical year to clearly investigate the seasonal
+dynamics and background behaviour of previous periods.
+
+```{r}
+# 📉 Analytical zoom excluding the large 2024 epidemic
+d %>%
+  filter(muni_code == 310620, ano != 2024) %>%
+  ggplot(aes(x = data, y = incidencia)) +
+  geom_line(linewidth = 0.8, color = "red") +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Dengue incidence in Belo Horizonte (MG)",
+    x = NULL,
+    y = "Incidence per 100,000 inhabitants"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 9),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+```
+
+📈 **Evidence-based interpretation (zoom without 2024)**: without the
+extreme epidemic year of 2024, the cyclical and highly seasonal
+behaviour of dengue in the capital becomes evident. The peaks invariably
+occur in the first half of each year (coinciding with the warmest and
+rainiest months of the transition from summer to autumn). There is also
+a clear interannual variation: the year 2021 showed a visibly reduced
+transmission, contrasting with the epidemic year of 2023. Perhaps it is
+still worth removing 2023 to visualise the rest, give it a try!!!!
+
+#### 🗺️ Macro-regional Scenario: Consolidated Aggregation of the State of Minas Gerais
+
+To generate a synthesis of the health issue's behaviour across the
+territory, we aggregate the numerical values of all 853 municipalities,
+estimating a unified monthly indicator for the entire state of Minas
+Gerais.
+
+```{r}
+# 🏗️ Spatiotemporal grouping and macro-epidemiological summarisation
+dmg <- d %>%
+  group_by(data) %>% 
+  summarise(casos = sum(casos),
+            pop = sum(pop)) %>% 
+  mutate(incidencia = casos / pop * 100000)
+```
+
+See by state:
+
+```{r}
+# 📉 Longitudinal monitoring of aggregated state cases
+dmg %>%   
+  ggplot(aes(x = data, y = casos)) +
+  geom_line(linewidth = 0.8) +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Dengue cases in Minas Gerais",
+    x = NULL,
+    y = "Cases"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 9),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+```
+
+Now, the incidence!
+
+```{r}
+# 📉 Consolidated incidence rate for the state of Minas Gerais
+dmg %>%   
+  ggplot(aes(x = data, y = incidencia)) +
+  geom_line(linewidth = 0.8) +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b/%Y"
+  ) +
+  labs(
+    title = "Dengue incidence in Minas Gerais",
+    x = NULL,
+    y = "Incidence per 100,000 inhabitants"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    axis.title.y = element_text(size = 9),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+```
+
+📈 **Evidence-based interpretation (state scenario)**: the aggregated
+dynamics for the state reflect the same pattern observed in Belo
+Horizonte, confirming that the 2024 epidemic was a widespread phenomenon
+on a regional scale rather than a localised outbreak. Incidence peaks
+occur synchronously in the first half of each year. Continuous
+monitoring of these curves is of great importance for planning and
+emergency resource allocation by state public health authorities.
+
+#### 🗺️ Map by Municipality
+
+To produce a map of cases or incidence for the state by municipality, it
+is necessary to obtain the geographic boundary polygons. The function
+below allows you to do this automatically via the `geobr` package. The
+data were downloaded for the year 2020. To avoid repeated downloads on
+every execution of the script, the code to save and load the map locally
+is available below.
+
+```{r}
+# 🗺️ Downloading the map of MG municipalities for the year 2020
+# Note: the IBGE standard comes with 7 digits (we will remove the last check digit for merging).
+mapa <- read_municipality(code_muni = "MG", year = 2020) # ✏️ EDIT the state and year if necessary
+
+# 💾 Optimisation: save the map locally so you do not need to download it from the internet every time
+# saveRDS(mapa, here::here("dados/mapa_mg.rds"), compress = "xz")
+
+# 📂 To load the saved map from your computer in future executions, uncomment the line below:
+# mapa <- readRDS(here::here("dados/mapa_mg.rds"))
+
+# 🔍 Inspecting the map column structure
+str(mapa)
+
+# ⚙️ Harmonising the linking variable: creating the 6-digit code for the municipality.
+# 'str_sub' automatically converts the number to a character (string) before slicing, saving lines of code!
+mapa <- mapa %>% 
+  mutate(muni_code = str_sub(code_muni, 1, 6))
+```
+
+🧩 Now it is time to join the map with the dengue data: 🗺️📊
+
+```{r}
+# 📊 Filtering epidemiological data for the year 2020 and consolidating by municipality
+d20_anual <- d %>% 
+  filter(ano == 2020) %>% 
+  group_by(muni_code) %>% 
+  summarise(casos = sum(casos, na.rm = TRUE)) # 'na.rm = TRUE' prevents missing values from zeroing the sum
+
+# 🔀 Merging spatial data (map) with health data (cases) using the common code
+mapa_casos20 <- left_join(mapa, d20_anual, by = "muni_code")
+```
+
+##### 🎉 We have a beautiful map! Try creating the incidence one 📊🦟
+
+Observe in detail what each part of the code does!
+
+```{r}
+# 🎨 Building the map with ggplot2
+m20 <- ggplot(data = mapa_casos20) +
+  # 🟢 Draws the municipality geometry (sf) and fills color based on the number of cases
+  geom_sf(aes(fill = casos), color = "white", size = 0.1) +
+  
+  # 🌈 "Viridis" color palette (highly recommended: great for color-blindness and scientific printing)
+  scale_fill_viridis_c(
+    option = "plasma", 
+    name = "No. of Cases",
+    na.value = "gray90" # 🔘 Light grey color for municipalities without data records
+  ) +
+  
+  # 📝 Titles, subtitles and footnotes
+  labs(
+    title = "Case distribution by municipality",
+    subtitle = "Minas Gerais, 2020",
+    caption = "Source: DataSUS and IBGE / Author's own elaboration"
+  ) +
+  
+  # 🧼 "void" theme (clean): removes axes, coordinates and grids, highlighting only the map
+  theme_void() + 
+  
+  # 📐 Fine-tuning typography and element positioning
+  theme(
+    plot.title = element_text(face = "bold", size = 11, hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5, face = "italic"),
+    legend.position = "right"
+  )
+
+# 💾 Saving the case distribution map
+ggsave(
+  plot = m20,                                # 🎯 Specifies the stored map object
+  filename = "resultados/mapa_mg_casos_2020.png", # 📂 Output path and file name
+  width = 8,                                 # 📏 Width calibrated for the geometric format of MG
+  height = 7,                                # 📐 Height balanced to maintain spatial proportion
+  dpi = 300                                  # 🔍 High resolution for reports and publications
+)
+```
+
+💡 **Golden tip for maps:** maps based on `sf` (Spatial Features)
+objects are sensitive to scale distortion. If you notice that the map of
+Minas Gerais looks too "stretched" or "flattened", slightly change the
+`width` or `height` values until you find the perfect fit for your
+layout.
+
+##### 💾 Exporting in multiple formats 
+
+Uncomment the code if you wish to save in one of these formats. For the
+last one, the specified package is required.
+
+```{r}
+# 🖼️ JPG (Ideal for presentations and quick sharing)
+# ggsave(
+#   filename = "resultados/mapa_mg_casos_2020.jpg",
+#   plot = m20, 
+#   width = 8, 
+#   height = 7, 
+#   dpi = 300
+# )
+
+# 📄 PDF (Vector format standard for academic reports)
+# ggsave(
+#   filename = "resultados/mapa_mg_casos_2020.pdf",
+#   plot = m20, 
+#   width = 8, 
+#   height = 7
+# )
+
+# 🖨️ TIFF (Lossless high quality, required by scientific journals)
+# ggsave(
+#   filename = "resultados/mapa_mg_casos_2020.tiff",
+#   plot = m20, 
+#   width = 8, 
+#   height = 7, 
+#   dpi = 300,
+#   compression = "lzw" # Reduces file size without losing quality
+# )
+
+# 🌐 SVG (Native vector for web and editing in Inkscape/Illustrator)
+# Note: Requires the 'svglite' package installed (install.packages("svglite"))
+# ggsave(
+#   filename = "resultados/mapa_mg_casos_2020.svg",
+#   plot = m20, 
+#   width = 8, 
+#   height = 7
+# )
+```
+
+#### ✅ Final Pedagogical Conclusion
+
+In this practical laboratory activity, we consolidated a complete
+processing workflow for public health data: from raw DataSUS Tabnet CSV
+files to a clean database ready for use in scientific analyses. We
+learned how to bypass common inconsistencies such as metadata rows,
+regional character encodings, and structural omissions of municipalities
+without records.
+
+🔄 Transforming the data into the long format and the subsequent
+integration with IBGE population projections allowed us to move from the
+analysis of absolute numbers to standardised epidemiological indicators.
+
+🗺️ Furthermore, we advanced to spatial analysis, integrating our data
+with IBGE polygons via the `geobr` package. We succeeded in generating
+an absolute case distribution map for the state and set up the
+scientific challenge of replicating this same visual logic for the
+incidence rate per 100,000 inhabitants — a fundamental metric to compare
+municipalities of different sizes without population bias.
+
+🌍 Mastering this entire methodological workflow — which unites data
+treatment, rate calculation, and cartography — constitutes the core
+foundation for studies using statistical and predictive modelling
+applied to the impacts of global climate changes on human health.
